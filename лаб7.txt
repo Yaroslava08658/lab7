@@ -1,0 +1,153 @@
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, func
+from sqlalchemy.orm import declarative_base, Session, relationship
+
+# Підключення до бази даних
+engine = create_engine('sqlite:///personal_expenses.db', echo=False)
+Base = declarative_base()
+
+# Оголошення класів моделей
+class ExpenseCategories(Base):
+    __tablename__ = 'expense_categories'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+
+class Customers(Base):
+    __tablename__ = 'customers'
+
+    id = Column(Integer, primary_key=True)
+    fullname = Column(String)
+    contact = Column(String)
+
+class Expenses(Base):
+    __tablename__ = 'expenses'
+
+    id = Column(Integer, primary_key=True)
+    customer_id = Column(Integer, ForeignKey('customers.id'))
+    category_id = Column(Integer, ForeignKey('expense_categories.id'))
+    amount = Column(Integer)
+    description = Column(String)
+
+    customer = relationship("Customers")
+    category = relationship("ExpenseCategories")
+
+# Створення таблиць
+Base.metadata.create_all(engine)
+
+# Створення сесії
+def create_session():
+    return Session(engine)
+
+# Функція для створення нової категорії витрат
+def create_expense_category(session, name):
+    new_category = ExpenseCategories(name=name)
+    session.add(new_category)
+    session.commit()
+
+# Функція для додавання нового клієнта
+def create_customer(session, fullname, contact):
+    new_customer = Customers(fullname=fullname, contact=contact)
+    session.add(new_customer)
+    session.commit()
+
+# Функція для додавання нової витрати
+def create_expense(session, customer_id, category_id, amount, description):
+    new_expense = Expenses(customer_id=customer_id, category_id=category_id, amount=amount, description=description)
+    session.add(new_expense)
+    session.commit()
+
+# Функція для отримання всіх категорій витрат
+def get_all_expense_categories(session):
+    return session.query(ExpenseCategories).all()
+
+# Функція для оновлення інформації про категорію витрат
+def update_expense_category(session, category_id, new_name):
+    category_to_update = session.query(ExpenseCategories).filter_by(id=category_id).first()
+    if category_to_update:
+        category_to_update.name = new_name
+        session.commit()
+
+# Функція для видалення категорії витрат
+def delete_expense_category(session, category_id):
+    category_to_delete = session.query(ExpenseCategories).filter_by(id=category_id).first()
+    if category_to_delete:
+        session.delete(category_to_delete)
+        session.commit()
+
+# Функція для отримання деталей витрат (ім'я клієнта, категорія, сума, опис)
+def get_expense_details(session):
+    return session.query(Customers.fullname, ExpenseCategories.name, Expenses.amount, Expenses.description).\
+        join(Expenses, Customers.id == Expenses.customer_id).\
+        join(ExpenseCategories, ExpenseCategories.id == Expenses.category_id).all()
+
+# Функція для вибірки витрат за клієнтом
+def get_expenses_by_customer(session, customer_name):
+    return session.query(Customers.fullname, ExpenseCategories.name, Expenses.amount, Expenses.description).\
+        join(Expenses, Customers.id == Expenses.customer_id).\
+        join(ExpenseCategories, ExpenseCategories.id == Expenses.category_id).\
+        filter(Customers.fullname == customer_name).all()
+
+# Функція для вибірки загальної суми витрат для кожного клієнта
+def total_expenses_per_customer(session):
+    return session.query(Customers.fullname, func.sum(Expenses.amount).label('total_amount')).\
+        outerjoin(Expenses, Customers.id == Expenses.customer_id).\
+        group_by(Customers.id).all()
+
+# Функція для вибірки середньої витрати на категорію
+def average_expense_per_category(session):
+    return session.query(ExpenseCategories.name, func.avg(Expenses.amount).label('average_amount')).\
+        join(Expenses, ExpenseCategories.id == Expenses.category_id).\
+        group_by(ExpenseCategories.id).all()
+
+# Закриття сесії
+def close_session(session):
+    session.close()
+
+# Приклад використання:
+session = create_session()
+
+# CRUD операції
+
+categories_to_add = [['Food'], ['Transport'], ['Entertainment'], ['Utilities']]
+for item in categories_to_add:
+    create_expense_category(session, item[0])
+
+customers_to_add = [['Alice', 'alice@mail.com'], ['Bob', 'bob@mail.com']]
+for item in customers_to_add:
+    create_customer(session, item[0], item[1])
+
+expenses_to_add = [[1, 1, 200, 'Groceries'], [1, 2, 50, 'Bus fare'], [2, 3, 300, 'Concert ticket'], [2, 4, 100, 'Electricity bill']]
+for item in expenses_to_add:
+    create_expense(session, item[0], item[1], item[2], item[3])
+
+# Вивід всіх категорій витрат
+all_categories = get_all_expense_categories(session)
+print("Всі категорії витрат:")
+for category in all_categories:
+    print(category.id, category.name)
+
+# Виведення деталей витрат
+expense_details = get_expense_details(session)
+print("\nДеталі витрат:")
+for detail in expense_details:
+    print(f"{detail[0]} | {detail[1]} | {detail[2]} | {detail[3]}")
+
+# Виведення витрат для клієнта Bob
+bob_expenses = get_expenses_by_customer(session, customer_name='Bob')
+print("\nВитрати Bob:")
+for expense in bob_expenses:
+    print(f"{expense[0]} | {expense[1]} | {expense[2]} | {expense[3]}")
+
+# Інші операції
+total_expenses = total_expenses_per_customer(session)
+print("\nЗагальні витрати кожного клієнта:")
+for row in total_expenses:
+    print(row)
+
+average_expenses = average_expense_per_category(session)
+print("\nСередні витрати по категоріях:")
+for row in average_expenses:
+    print(row)
+
+# Закриття сесії
+close_session(session)
